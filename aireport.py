@@ -4,7 +4,7 @@ import requests
 import feedparser
 from groq import Groq
 
-# Load env
+# Load environment variables
 load_dotenv()
 
 telegram_token = os.getenv("TELEGRAM_BOT_TOKEN")
@@ -14,46 +14,62 @@ groq_key = os.getenv("GROQ_API_KEY")
 # Groq client
 client = Groq(api_key=groq_key)
 
-# Fetch headlines
-url = "https://news.google.com/rss/search?q=geopolitics+OR+war+OR+conflict&hl=en-IN&gl=IN&ceid=IN:en"
+# ===============================
+# NEWS SOURCE (Tailored for OMCs)
+# ===============================
+url = "https://news.google.com/rss/search?q=Brent+crude+OR+oil+prices+OR+Strait+of+Hormuz+OR+Hormuz+OR+Iran+OR+Trump+OR+sanctions+OR+OPEC+OR+IOC+OR+HPCL+OR+BPCL+OR+fuel+prices+India&hl=en-IN&gl=IN&ceid=IN:en"
+
 feed = feedparser.parse(url)
 
+# Get top 15 headlines
 headlines = []
-for entry in feed.entries[:10]:
+
+for entry in feed.entries[:15]:
     headlines.append(entry.title)
 
 headline_text = "\n".join(headlines)
 
+# ===============================
+# AI PROMPT
+# ===============================
 prompt = f"""
-You are a geopolitical analyst.
+You are an equity analyst tracking Indian Oil Marketing Companies:
+IOC, HPCL, BPCL.
 
-Turn these headlines into a concise report.
+Analyze these headlines and create a short investor report.
 
-Format exactly:
+Format EXACTLY:
 
-🌍 Geo Intelligence Report
+🛢️ OMC Intelligence Report
 
-• Max 4 bullet points
-• Mention key tensions/conflicts
-• Mention likely market/regional impact
-• Be factual
-• No fluff
+• Summarize key developments in crude oil / Hormuz / Iran / Trump / OPEC / India fuel policy
+• Mention likely impact on IOC / HPCL / BPCL as Positive / Negative / Neutral
+• Mention Brent crude risk direction: Up / Down / Stable
+• Mention urgency level: Low / Medium / High
+• Max 5 bullet points
+• Be concise and factual
+• Ignore irrelevant headlines
 
 Headlines:
 {headline_text}
 """
 
+# ===============================
+# AI GENERATION
+# ===============================
 chat = client.chat.completions.create(
     model="llama-3.3-70b-versatile",
     messages=[
         {"role": "user", "content": prompt}
     ],
-    temperature=0.3
+    temperature=0.2
 )
 
 report = chat.choices[0].message.content
 
-# Send Telegram
+# ===============================
+# SEND TO TELEGRAM
+# ===============================
 telegram_url = f"https://api.telegram.org/bot{telegram_token}/sendMessage"
 
 payload = {
@@ -63,4 +79,4 @@ payload = {
 
 requests.post(telegram_url, data=payload)
 
-print("Report sent.")
+print("OMC report sent.")
