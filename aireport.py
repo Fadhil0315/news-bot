@@ -71,18 +71,18 @@ if mode == "normal":
 
     same_count = len(set(headlines) & set(previous))
 
-if same_count >= 10:
-    telegram_url = f"https://api.telegram.org/bot{telegram_token}/sendMessage"
+    if same_count >= 10:
+        telegram_url = f"https://api.telegram.org/bot{telegram_token}/sendMessage"
 
-    payload = {
-        "chat_id": chat_id,
-        "text": "🟢 No major new OMC-relevant developments since last update.\nBrent stable / no fresh catalyst."
-    }
+        payload = {
+            "chat_id": chat_id,
+            "text": "🟢 No major new OMC-relevant developments since last update.\nBrent stable / no fresh catalyst."
+        }
 
-    requests.post(telegram_url, data=payload)
+        requests.post(telegram_url, data=payload)
 
-    print("No new news message sent.")
-    sys.exit()   
+        print("No new news message sent.")
+        sys.exit()   
 
 # ----------------------
 # Prompt
