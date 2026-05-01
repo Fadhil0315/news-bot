@@ -2,11 +2,12 @@ name: Geo News Bot
 
 on:
   schedule:
-    # Morning Brief - 8:15 AM IST
-    - cron: "45 2 * * *"
+    # Morning Brief (compensated for observed +3h drift)
+    # Should land around 8:15 AM IST
+    - cron: "45 23 * * *"
 
-    # Hourly checks - 9:15 AM to 3:15 PM IST
-    - cron: "45 3-9 * * *"
+    # Normal alerts every 3 hours, 24/7
+    - cron: "0 */3 * * *"
 
   workflow_dispatch:
 
@@ -30,7 +31,7 @@ jobs:
         run: pip install -r requirements.txt
 
       - name: Run Morning Brief
-        if: github.event.schedule == '45 2 * * *'
+        if: github.event.schedule == '45 23 * * *'
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           CHAT_ID: ${{ secrets.CHAT_ID }}
@@ -38,7 +39,7 @@ jobs:
         run: python aireport.py morning
 
       - name: Run Normal Alerts
-        if: github.event.schedule == '45 3-9 * * *'
+        if: github.event.schedule == '0 */3 * * *'
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           CHAT_ID: ${{ secrets.CHAT_ID }}
