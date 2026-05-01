@@ -55,7 +55,12 @@ feed = feedparser.parse(url)
 
 headlines = []
 for entry in feed.entries[:15]:
-    headlines.append(entry.title.strip())
+    item = entry.title
+
+    if hasattr(entry, "summary"):
+        item += " | " + entry.summary
+
+    headlines.append(item)
 
 headline_text = "\n".join(headlines)
 
