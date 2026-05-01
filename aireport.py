@@ -168,7 +168,9 @@ if mode == "normal":
     same_count = len(set(headline_keys) & set(previous))
 
     # If almost same set, send no-news ping
-    if same_count >= 8:
+    overlap_ratio = same_count / max(len(headline_keys), 1)
+
+    if overlap_ratio >= 0.70:
         telegram_url = f"https://api.telegram.org/bot{telegram_token}/sendMessage"
 
         payload = {
@@ -220,7 +222,7 @@ Current Brent Price: {brent_text}
 
 If there is no meaningful new development affecting oil, geopolitics, Hormuz, India fuel economics, or OMC stocks, reply ONLY:
 
-NO_SIGNAL
+"Not a lotta new news gang"
 
 Otherwise generate a sharp investor update covering:
 
