@@ -132,7 +132,7 @@ for entry in entries:
                 extracted = extracted[len(clean_title):].strip()
 
             # Use first 220 words (efficient + strong context)
-            words = extracted.split()[:220]
+            words = extracted.split()[:500]
             article_text = " ".join(words)
 
     except:
@@ -220,11 +220,9 @@ IOC, HPCL, BPCL.
 
 Current Brent Price: {brent_text}
 
-If there is no meaningful new development affecting oil, geopolitics, Hormuz, India fuel economics, or OMC stocks, reply ONLY:
 
-"Not a lotta new news gang"
 
-Otherwise generate a sharp investor update covering:
+ generate a sharp investor update covering:
 
 1. OMC stock direction from this development
 2. Exact Hormuz / Iran / US update if relevant
