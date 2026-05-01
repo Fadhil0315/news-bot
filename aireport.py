@@ -275,3 +275,9 @@ with open(STATE_FILE, "w", encoding="utf-8") as f:
         f.write(h + "\n")
 
 print("Done.")
+
+
+print("MODEL input:")
+print(prompt)
+print("MODEL OUTPUT:")
+print(report)
