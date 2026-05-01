@@ -5,17 +5,22 @@ import requests
 import feedparser
 import yfinance as yf
 from groq import Groq
-from bs4 import BeautifulSoup
 import trafilatura
 
 load_dotenv()
 
+# -------------------------
+# ENV
+# -------------------------
 telegram_token = os.getenv("TELEGRAM_BOT_TOKEN")
 chat_id = os.getenv("CHAT_ID")
 groq_key = os.getenv("GROQ_API_KEY")
 
 client = Groq(api_key=groq_key)
 
+# -------------------------
+# MODE
+# -------------------------
 mode = "normal"
 if len(sys.argv) > 1:
     mode = sys.argv[1].lower()
@@ -23,7 +28,15 @@ if len(sys.argv) > 1:
 STATE_FILE = "state/last_headlines.txt"
 
 # -------------------------
-# Brent Price
+# ARTICLE COUNTS
+# -------------------------
+if mode == "morning":
+    TARGET_ARTICLES = 18
+else:
+    TARGET_ARTICLES = 12
+
+# -------------------------
+# BRENT PRICE
 # -------------------------
 try:
     brent = yf.Ticker("BZ=F")
@@ -33,24 +46,26 @@ try:
     prev = round(hist["Close"].iloc[-2], 2)
     diff = round(latest - prev, 2)
 
-    trend = "Stable"
     if diff > 0:
-        trend = "Up"
+        trend = f"Up {diff}"
     elif diff < 0:
-        trend = "Down"
+        trend = f"Down {abs(diff)}"
+    else:
+        trend = "Flat"
 
-    brent_text = f"${latest} ({trend} {diff})"
+    brent_text = f"${latest} ({trend})"
 
 except:
     brent_text = "Unavailable"
 
 # -------------------------
-# Better RSS Feeds
+# HIGH QUALITY FEEDS
 # -------------------------
 feeds = [
     "https://feeds.reuters.com/reuters/businessNews",
     "https://feeds.reuters.com/reuters/worldNews",
     "https://www.oilprice.com/rss/main",
+    "https://feeds.reuters.com/reuters/topNews",
 ]
 
 entries = []
@@ -58,27 +73,51 @@ entries = []
 for url in feeds:
     try:
         parsed = feedparser.parse(url)
-        entries.extend(parsed.entries[:5])
+        entries.extend(parsed.entries[:12])
     except:
         pass
 
 # -------------------------
-# Extract Content
+# KEYWORDS (RELEVANCE FILTER)
+# -------------------------
+keywords = [
+    "oil", "crude", "brent", "wti", "energy",
+    "hormuz", "iran", "tehran", "middle east",
+    "trump", "sanction", "shipping", "tankers",
+    "opec", "gasoline", "diesel", "petrol", "lpg",
+    "jet fuel", "refinery",
+    "india", "indian oil", "ioc", "bpcl", "hpcl"
+]
+
+# -------------------------
+# BUILD CLEAN NEWS ITEMS
+# TITLE + REAL ARTICLE TEXT ONLY
 # -------------------------
 news_items = []
+headline_keys = []
+seen_titles = set()
 
-for entry in entries[:12]:
+for entry in entries:
+    if len(news_items) >= TARGET_ARTICLES:
+        break
+
     title = entry.get("title", "").strip()
     link = entry.get("link", "").strip()
 
     if not title or not link:
         continue
 
-    # Clean summary if exists
-    summary = entry.get("summary", "")
-    summary = BeautifulSoup(summary, "html.parser").get_text(" ", strip=True)
+    clean_title = " ".join(title.split())
 
-    # Get real article text
+    if clean_title.lower() in seen_titles:
+        continue
+
+    text_check = clean_title.lower()
+
+    # relevance check from title
+    if not any(word in text_check for word in keywords):
+        continue
+
     article_text = ""
 
     try:
@@ -86,24 +125,39 @@ for entry in entries[:12]:
         extracted = trafilatura.extract(downloaded)
 
         if extracted:
-            article_text = extracted[:600]
+            extracted = " ".join(extracted.split())
+
+            # Remove title if repeated at start
+            if extracted.lower().startswith(clean_title.lower()):
+                extracted = extracted[len(clean_title):].strip()
+
+            # Use first 220 words (efficient + strong context)
+            words = extracted.split()[:220]
+            article_text = " ".join(words)
 
     except:
         pass
 
-    combined = f"""
-TITLE: {title}
-SUMMARY: {summary}
-CONTENT: {article_text}
-"""
+    # If extraction failed, skip low-quality item
+    if len(article_text) < 80:
+        continue
 
-    news_items.append(combined.strip())
+    blob = f"""TITLE: {clean_title}
+TEXT: {article_text}"""
+
+    news_items.append(blob)
+    headline_keys.append(clean_title)
+    seen_titles.add(clean_title.lower())
 
 # -------------------------
-# Memory Compare
+# FALLBACK IF TOO FEW ARTICLES
 # -------------------------
-headline_keys = [item.split("\n")[0] for item in news_items]
+if len(news_items) == 0:
+    news_items.append("TITLE: No major feed items found\nTEXT: Markets quiet. No strong oil catalyst detected.")
 
+# -------------------------
+# MEMORY CHECK (NORMAL MODE ONLY)
+# -------------------------
 if mode == "normal":
     previous = []
 
@@ -113,6 +167,7 @@ if mode == "normal":
 
     same_count = len(set(headline_keys) & set(previous))
 
+    # If almost same set, send no-news ping
     if same_count >= 8:
         telegram_url = f"https://api.telegram.org/bot{telegram_token}/sendMessage"
 
@@ -125,64 +180,71 @@ if mode == "normal":
         sys.exit()
 
 # -------------------------
-# Prompt
+# BUILD NEWS BLOB
 # -------------------------
 news_blob = "\n\n".join(news_items)
 
+# -------------------------
+# PROMPTS
+# -------------------------
 if mode == "morning":
     prompt = f"""
-You are an elite equity analyst tracking IOC, HPCL, BPCL.
+You are an elite macro + equity analyst focused on Indian OMC stocks:
+IOC, HPCL, BPCL.
 
 Current Brent Price: {brent_text}
 
-Use the news below to create a sharp MORNING BRIEF.
+Use all news provided below and generate a sharp, natural morning intelligence brief.
 
-Focus on:
-- Hormuz / Iran / US
-- Crude oil moves
-- Supply disruptions
-- India macro impact
-- IOC HPCL BPCL impact
+Your response must cover:
 
-Format:
+1. Expected direction for IOC / HPCL / BPCL today (bullish / bearish / mixed) and why
+2. Exact Strait of Hormuz / Iran / US developments
+3. Brent crude likely near-term direction and reasons
+4. Concise summary of all developments
+5. Any key risk or opportunity for Indian OMC investors today
 
-🌅 Morning OMC Brief
-
-• Brent: ...
-• Biggest overnight development ...
-• OMC Impact: Positive/Negative/Neutral
-• Market Open Setup: Bullish/Bearish/Neutral
-• Urgency: Low/Medium/High
+Be direct, intelligent, concise, and practical.
+Do NOT use filler language.
+Use readable paragraphs or bullets naturally.
 
 NEWS:
 {news_blob}
 """
 else:
     prompt = f"""
-You are an elite equity analyst tracking IOC, HPCL, BPCL.
+You are an elite macro + equity analyst focused on Indian OMC stocks:
+IOC, HPCL, BPCL.
 
 Current Brent Price: {brent_text}
 
-If no meaningful oil/geopolitical/India catalyst exists, say only:
+If there is no meaningful new development affecting oil, geopolitics, Hormuz, India fuel economics, or OMC stocks, reply ONLY:
 
 NO_SIGNAL
 
-Else format:
+Otherwise generate a sharp investor update covering:
 
-🛢️ OMC Intelligence Report
+1. OMC stock direction from this development
+2. Exact Hormuz / Iran / US update if relevant
+3. Brent crude likely direction and why
+4. Summary of what changed and why it matters
+5. Immediate takeaway for an Indian OMC investor
 
-• Brent: ...
-• Key development ...
-• OMC Impact: Positive/Negative/Neutral
-• Urgency: Low/Medium/High
-• One investor action note
+Be concise, high-signal, and practical.
+Avoid robotic templates.
 
 NEWS:
 {news_blob}
 """
 
 # -------------------------
-# AI Call
+# OPTIONAL DEBUG
+# -------------------------
+# with open("debug_prompt.txt", "w", encoding="utf-8") as f:
+#     f.write(prompt)
+
+# -------------------------
+# GROQ CALL
 # -------------------------
 chat = client.chat.completions.create(
     model="llama-3.3-70b-versatile",
@@ -193,7 +255,7 @@ chat = client.chat.completions.create(
 report = chat.choices[0].message.content.strip()
 
 # -------------------------
-# Send Telegram
+# TELEGRAM SEND
 # -------------------------
 if report != "NO_SIGNAL":
     telegram_url = f"https://api.telegram.org/bot{telegram_token}/sendMessage"
@@ -206,7 +268,7 @@ if report != "NO_SIGNAL":
     requests.post(telegram_url, data=payload)
 
 # -------------------------
-# Save Memory
+# SAVE STATE
 # -------------------------
 with open(STATE_FILE, "w", encoding="utf-8") as f:
     for h in headline_keys:
